@@ -1,8 +1,7 @@
-h1. Bees with Machine Guns!
+h1. HiveMind
 
-A utility for arming (creating) many bees (micro EC2 instances) to attack (load test) targets (web applications).
+A fork of Bees With Machine Guns to make it usefull for more arbitrary tasks.
 
-Also, retribution for "this shameful act":http://kottke.org/10/10/tiny-catapult-for-throwing-pies-at-bees against a proud hive.
 
 h2. Dependencies
 
@@ -10,26 +9,12 @@ h2. Dependencies
 * boto
 * paramiko
 
-h2. Installation for users
-
-Preferred:
+h2. Installation
 
 <pre>
-pip install beeswithmachineguns
-</pre>
-
-or, if you must:
-
-<pre>
-easy_install beeswithmachineguns
-</pre>
-
-h2. Installation for developers (w/ virtualenv + virtualenvwrapper)
-
-<pre>
-git clone git://github.com/newsapps/beeswithmachineguns.git
-cd beeswithmachineguns
-mkvirtualenv --no-site-packages bees
+git clone git://github.com/GraveRaven/hivemind.git
+cd hivemind
+mkvirtualenv --no-site-packages hivemind
 easy_install pip
 pip install -r requirements.txt
 </pre>
