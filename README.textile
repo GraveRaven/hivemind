@@ -1,6 +1,6 @@
 h1. HiveMind
 
-A fork of Bees With Machine Guns to make it usefull for more arbitrary tasks.
+A fork of Bees With Machine Guns to make it useful for more arbitrary tasks.
 
 
 h2. Dependencies

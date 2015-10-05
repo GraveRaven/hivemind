@@ -38,20 +38,19 @@ def parse_options():
     parser = OptionParser(usage="""
 bees COMMAND [options]
 
-Bees with Machine Guns
+Hivemind
 
-A utility for arming (creating) many bees (small EC2 instances) to attack
-(load test) targets (web applications).
+A fork of Bees With Machine Guns to make it useful for more arbitrary tasks
 
 commands:
   up      Start a batch of load testing servers.
-  attack  Begin the attack on a specific url.
+  order  Begin the attack on a specific url.
   down    Shutdown and deactivate the load testing servers.
   report  Report the status of the load testing servers.
     """)
 
     up_group = OptionGroup(parser, "up",
-                           """In order to spin up new servers you will need to specify at least the -k command, which is the name of the EC2 keypair to use for creating and connecting to the new servers. The bees will expect to find a .pem file with this name in ~/.ssh/. Alternatively, bees can use SSH Agent for the key.""")
+                           """In order to spin up new servers you will need to specify at least the -k command, which is the name of the EC2 keypair to use for creating and connecting to the new servers. The ants will expect to find a .pem file with this name in ~/.ssh/. Alternatively, ants can use SSH Agent for the key.""")
 
     # Required
     up_group.add_option('-k', '--key',  metavar="KEY",  nargs=1,
@@ -85,47 +84,18 @@ commands:
 
     parser.add_option_group(up_group)
 
-    attack_group = OptionGroup(parser, "attack",
-                               """Beginning an attack requires only that you specify the -u option with the URL you wish to target.""")
+    order_group = OptionGroup(parser, "order",
+                               """Orders will be executed before order files. Orders and order files are executed in the order entered.""")
 
     # Required
-    attack_group.add_option('-u', '--url', metavar="URL", nargs=1,
-                            action='store', dest='url', type='string',
-                            help="URL of the target to attack.")
-    attack_group.add_option('-K', '--keepalive', metavar="KEEP_ALIVE", nargs=0,
-                            action='store', dest='keep_alive', type='string', default=False,
-                            help="Keep-Alive connection.")
-    attack_group.add_option('-p', '--post-file',  metavar="POST_FILE",  nargs=1,
-                            action='store', dest='post_file', type='string', default=False,
-                            help="The POST file to deliver with the bee's payload.")
-    attack_group.add_option('-m', '--mime-type',  metavar="MIME_TYPE",  nargs=1,
-                            action='store', dest='mime_type', type='string', default='text/plain',
-                            help="The MIME type to send with the request.")
-    attack_group.add_option('-n', '--number', metavar="NUMBER", nargs=1,
-                            action='store', dest='number', type='int', default=1000,
-                            help="The number of total connections to make to the target (default: 1000).")
-    attack_group.add_option('-C', '--cookies', metavar="COOKIES", nargs=1, action='store', dest='cookies',
-                            type='string', default='',
-                            help='Cookies to send during http requests. The cookies should be passed using standard cookie formatting, separated by semi-colons and assigned with equals signs.')
-    attack_group.add_option('-c', '--concurrent', metavar="CONCURRENT", nargs=1,
-                            action='store', dest='concurrent', type='int', default=100,
-                            help="The number of concurrent connections to make to the target (default: 100).")
-    attack_group.add_option('-H', '--headers', metavar="HEADERS", nargs=1,
-                            action='store', dest='headers', type='string', default='',
-                            help="HTTP headers to send to the target to attack. Multiple headers should be separated by semi-colons, e.g header1:value1;header2:value2")
-    attack_group.add_option('-e', '--csv', metavar="FILENAME", nargs=1,
-                            action='store', dest='csv_filename', type='string', default='',
-                            help="Store the distribution of results in a csv file for all completed bees (default: '').")
+    order_group.add_option('-o', '--order', metavar="ORDER", nargs=1,
+                            action='append', dest='orders', type='string',
+                            help="Order")
+    order_group.add_option('-f', '--file', metavar="FILE", nargs=1,
+                            action='append', dest='files', type='string',
+                            help="File with orders")
 
-    # Optional
-    attack_group.add_option('-T', '--tpr', metavar='TPR', nargs=1, action='store', dest='tpr', default=None, type='float',
-                            help='The upper bounds for time per request. If this option is passed and the target is below the value a 1 will be returned with the report details (default: None).')
-    attack_group.add_option('-R', '--rps', metavar='RPS', nargs=1, action='store', dest='rps', default=None, type='float',
-                            help='The lower bounds for request per second. If this option is passed and the target is above the value a 1 will be returned with the report details (default: None).')
-    attack_group.add_option('-A', '--basic_auth', metavar='basic_auth', nargs=1, action='store', dest='basic_auth', default='', type='string',
-                            help='BASIC authentication credentials, format auth-username:password (default: None).')
-
-    parser.add_option_group(attack_group)
+    parser.add_option_group(order_group)
 
     (options, args) = parser.parse_args()
 
@@ -139,39 +109,19 @@ commands:
             parser.error('To spin up new instances you need to specify a key-pair name with -k')
 
         if options.group == 'default':
-            print('New bees will use the "default" EC2 security group. Please note that port 22 (SSH) is not normally open on this group. You will need to use to the EC2 tools to open it before you will be able to attack.')
+            print('New ants will use the "default" EC2 security group. Please note that port 22 (SSH) is not normally open on this group. You will need to use to the EC2 tools to open it before you will be able to attack.')
 
-        bees.up(options.servers, options.group, options.zone, options.instance, options.type, options.login, options.key, options.subnet, options.bid)
-    elif command == 'attack':
-        if not options.url:
-            parser.error('To run an attack you need to specify a url with -u')
+        ants.up(options.servers, options.group, options.zone, options.instance, options.type, options.login, options.key, options.subnet, options.bid)
+    elif command == 'order':
+        if not options.orders and not options.files:
+            parser.error('Need orders')
 
-        parsed = urlparse(options.url)
-        if "/" not in parsed.path:
-            if not parsed.scheme:
-                parsed = urlparse("http://" + options.url + "/")
-            else:
-                parsed = urlparse(options.url + "/")
-        if not parsed.scheme:
-                parsed = urlparse("http://" + options.url)
-        additional_options = dict(
-            cookies=options.cookies,
-            headers=options.headers,
-            post_file=options.post_file,
-            keep_alive=options.keep_alive,
-            mime_type=options.mime_type,
-            csv_filename=options.csv_filename,
-            tpr=options.tpr,
-            rps=options.rps,
-            basic_auth=options.basic_auth
-        )
-
-        bees.attack(options.url, options.number, options.concurrent, **additional_options)
+        ants.order(options.orders, options.files)
 
     elif command == 'down':
-        bees.down()
+        ants.down()
     elif command == 'report':
-        bees.report()
+        ants.report()
 
 def main():
     parse_options()
