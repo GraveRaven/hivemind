@@ -25,10 +25,6 @@ THE SOFTWARE.
 """
 
 from . import ants
-try:
-    from urllib.parse import urlparse
-except ImportError:
-    from urlparse import urlparse
 from optparse import OptionParser, OptionGroup
 
 def parse_options():

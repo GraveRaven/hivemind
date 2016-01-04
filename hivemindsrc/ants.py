@@ -92,22 +92,20 @@ def _get_pem_path(key):
 def _get_region(zone):
     return zone if 'gov' in zone else zone[:-1] # chop off the "d" in the "us-east-1d" to get the "Region"
 
-def _get_security_group_ids(connection, security_group_names, subnet):
-    ids = []
-    # Since we cannot get security groups in a vpc by name, we get all security groups and parse them by name later
-    security_groups = connection.get_all_security_groups()
+def _get_security_group_id(connection, security_group_name, subnet):
+    if not security_group_name:
+        print('The bees need a security group to run under. Need to open a port from where you are to the target subnet.')
+        return
 
-    # Parse the name of each security group and add the id of any match to the group list
-    for group in security_groups:
-        for name in security_group_names:
-            if group.name == name:
-                if subnet == None:
-                    if group.vpc_id == None:
-                        ids.append(group.id)
-                    elif group.vpc_id != None:
-                        ids.append(group.id)
+    security_groups = connection.get_all_security_groups(filters={'group-name': [security_group_name]})
 
-        return ids
+    if not security_groups:
+        print('The bees need a security group to run under. The one specified was not found.')
+        return
+
+    group = security_groups[0] if security_groups else None
+
+    return group.id
 
 # Methods
 
@@ -120,14 +118,18 @@ def up(count, group, zone, image_id, instance_type, username, key_name, subnet, 
 
     count = int(count)
     if existing_username == username and existing_key_name == key_name and existing_zone == zone:
+        ec2_connection = boto.ec2.connect_to_region(_get_region(zone))
+        existing_reservations = ec2_connection.get_all_instances(instance_ids=instance_ids)
+        existing_instances = filter(lambda i: i.state == 'running', [r.instances[0] for r in existing_reservations])
+        
         # User, key and zone match existing values and instance ids are found on state file
-        if count <= len(instance_ids):
+        if count <= len(existing_instances):
             # Count is less than the amount of existing instances. No need to create new ones.
             print('Ants are already assembled and awaiting orders.')
             return
         else:
             # Count is greater than the amount of existing instances. Need to create the only the extra instances.
-            count -= len(instance_ids)
+            count -= len(existing_instances)
     elif instance_ids:
         # Instances found on state file but user, key and/or zone not matching existing value.
         # State file only stores one user/key/zone config combination so instances are unusable.
@@ -159,6 +161,13 @@ def up(count, group, zone, image_id, instance_type, username, key_name, subnet, 
     if ec2_connection == None:
         raise Exception("Invalid zone specified? Unable to connect to region using zone name")
 
+    groupId = group if subnet is None else _get_security_group_id(ec2_connection, group, subnet)
+    print("GroupId found: %s" % groupId)
+
+    placement = None if 'gov' in zone else zone
+    print("Placement: %s" % placement)
+
+
     if bid:
         print('Attempting to call up %i spot ants, this can take a while...' % count)
 
@@ -167,9 +176,9 @@ def up(count, group, zone, image_id, instance_type, username, key_name, subnet, 
             price=bid,
             count=count,
             key_name=key_name,
-            security_groups=[group] if subnet is None else _get_security_group_ids(ec2_connection, [group], subnet),
+            security_group_ids=[groupId],
             instance_type=instance_type,
-            placement=None if 'gov' in zone else zone,
+            placement=placement,
             subnet_id=subnet)
 
         # it can take a few seconds before the spot requests are fully processed
@@ -185,9 +194,9 @@ def up(count, group, zone, image_id, instance_type, username, key_name, subnet, 
                 min_count=count,
                 max_count=count,
                 key_name=key_name,
-                security_groups=[group] if subnet is None else _get_security_group_ids(ec2_connection, [group], subnet),
+                security_group_ids=[groupId],
                 instance_type=instance_type,
-                placement=None if 'gov' in zone else zone,
+                placement=placement,
                 subnet_id=subnet)
         except boto.exception.EC2ResponseError as e:
             print("Unable to call ants:", e.message)
@@ -197,8 +206,10 @@ def up(count, group, zone, image_id, instance_type, username, key_name, subnet, 
 
     if instance_ids:
         existing_reservations = ec2_connection.get_all_instances(instance_ids=instance_ids)
-        existing_instances = [r.instances[0] for r in existing_reservations]
+        existing_instances = filter(lambda i: i.state == 'running', [r.instances[0] for r in existing_reservations])
         map(instances.append, existing_instances)
+        dead_instances = filter(lambda i: i not in [j.id for j in existing_instances], instance_ids)
+        map(instance_ids.pop, [instance_ids.index(i) for i in dead_instances])
 
     print('Waiting for ants to spawn...')
 
@@ -306,36 +317,6 @@ def _execute_order(params):
 
         print('Ant %i is executing order' % params['i'])
 
-        """
-        stdin, stdout, stderr = client.exec_command('mktemp')
-        # paramiko's read() returns bytes which need to be converted back to a str
-        params['csv_filename'] = IS_PY2 and stdout.read().strip() or stdout.read().decode('utf-8').strip()
-        if params['csv_filename']:
-            options += ' -e %(csv_filename)s' % params
-        else:
-            print('Bee %i lost sight of the target (connection timed out creating csv_filename).' % params['i'])
-            return None
-
-        if params['post_file']:
-            pem_file_path=_get_pem_path(params['key_name'])
-            os.system("scp -q -o 'StrictHostKeyChecking=no' -i %s %s %s@%s:/tmp/honeycomb"
-                      "" % (pem_file_path, params['post_file'], params['username'], params['instance_name']))
-            options += ' -T "%(mime_type)s; charset=UTF-8" -p /tmp/honeycomb' % params
-
-        if params['keep_alive']:
-            options += ' -k'
-
-        if params['cookies'] is not '':
-            options += ' -H \"Cookie: %s;sessionid=NotARealSessionID;\"' % params['cookies']
-        else:
-            options += ' -C \"sessionid=NotARealSessionID\"'
-
-        if params['basic_auth'] is not '':
-            options += ' -A %s' % params['basic_auth']
-
-        params['options'] = options
-        benchmark_command = 'ab -v 3 -r -n %(num_requests)s -c %(concurrent_requests)s %(options)s "%(url)s"' % params
-"""
         stdin, stdout, stderr = client.exec_command(params['order'])
 
         #response = {}
